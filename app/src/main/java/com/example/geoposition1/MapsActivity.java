@@ -1,22 +1,52 @@
 package com.example.geoposition1;
 
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 import androidx.fragment.app.FragmentActivity;
 
-import android.os.Bundle;
 
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.graphics.Point;
+import android.location.Location;
+import android.location.LocationListener;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Message;
+import android.os.SystemClock;
+import android.util.Log;
+import android.view.animation.Interpolator;
+import android.view.animation.LinearInterpolator;
+import android.widget.Button;
+import android.widget.TextView;
+
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.PendingResult;
+import com.google.android.gms.common.api.Status;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationServices;
 import com.google.android.gms.maps.CameraUpdateFactory;
 import com.google.android.gms.maps.GoogleMap;
 import com.google.android.gms.maps.OnMapReadyCallback;
+import com.google.android.gms.maps.Projection;
 import com.google.android.gms.maps.SupportMapFragment;
 import com.google.android.gms.maps.model.LatLng;
+import com.google.android.gms.maps.model.Marker;
 import com.google.android.gms.maps.model.MarkerOptions;
+
 
 public class MapsActivity
         extends FragmentActivity
         implements LocationListener,
-                OnMapReadyCallback
+                OnMapReadyCallback,
                 GoogleApiClient.ConnectionCallbacks,
                 GoogleApiClient.OnConnectionFailedListener{
+
+
+
 
     private GoogleMap mMap;
     private final int MY_LOCATION_REQUEST_CODE = 100;
@@ -55,17 +85,17 @@ public class MapsActivity
 
         createLocationRequest();
         mGoogleApiClient = new GoogleApiClient.Builder(this)
-                    .addApi(LocationServices.API)
-                    .addConnectionCallbacks(this)
-                    .addOnConnectionFailedListener(this)
-                    .build();
+                .addApi(LocationServices.API)
+                .addConnectionCallbacks(this)
+                .addOnConnectionFailedListener(this)
+                .build();
 
         // Obtain the SupportMapFragment and get notified when the map is ready to be used.
         SupportMapFragment mapFragment = (SupportMapFragment) getSupportFragmentManager()
                 .findFragmentById(R.id.map);
         mapFragment.getMapAsync(this);
 
-        handler = newHandler(){
+        handler = new Handler(){
             @Override
             public void handleMessage(Message msg){
                 switch(msg.what){
@@ -76,7 +106,6 @@ public class MapsActivity
         };
     }
 
-
     /**
      * Manipulates the map once available.
      * This callback is triggered when the map is ready to be used.
@@ -86,6 +115,7 @@ public class MapsActivity
      * it inside the SupportMapFragment. This method will only be triggered once the user has
      * installed Google Play services and returned to the app.
      */
+
     @Override
     public void onMapReady(GoogleMap googleMap) {
         mMap = googleMap;
@@ -120,7 +150,7 @@ public class MapsActivity
                 marker.setRotation(-rot > 180 ? rot/2 : rot);
                 if(t < 1.0){
                     //Post again 16ms later.
-                    handler.postelayed(this, 16);
+                    handler.postDelayed(this, 16);
                 }
             }
         });
@@ -131,29 +161,29 @@ public class MapsActivity
         final long start = SystemClock.uptimeMillis();
         Projection proj = mMap.getProjection();
         Point startPoint = proj.toScreenLocation(m.getPosition());
-        final LatLng startLatLng = proj.FromScreenLocation(startPoint);
+        final LatLng startLatLng = proj.fromScreenLocation(startPoint);
         final long duration = 5000;
         final Interpolator interpolator = new LinearInterpolator();
 
         handler.post(new Runnable(){
-           @Override
+            @Override
             public void run(){
-               long elapsed = SystemClock.uptimeMillis() - start;
-               float t = interpolator.getInterpolation((float) elapsed / duration);
-               double lng = t * toPosition.longitude + (1 - t) * startLatLng.longitude;
-               double lat = t * toPosition.latitude + (1 - t) * startLatLng.latitude;
-               m.setPosition(new LatLng(lat, lng));
+                long elapsed = SystemClock.uptimeMillis() - start;
+                float t = interpolator.getInterpolation((float) elapsed / duration);
+                double lng = t * toPosition.longitude + (1 - t) * startLatLng.longitude;
+                double lat = t * toPosition.latitude + (1 - t) * startLatLng.latitude;
+                m.setPosition(new LatLng(lat, lng));
 
-               if(t < 1.0){
-                   //Post again 16ms later
+                if(t < 1.0){
+                    //Post again 16ms later
                     handler.postDelayed(this, 16);
-               }else{
-                   if(hideMark){
-                       m.setVisible(false);
-                   }else{
-                       m.setVisible(true);
-                   }
-               }
+                }else{
+                    if(hideMark){
+                        m.setVisible(false);
+                    }else{
+                        m.setVisible(true);
+                    }
+                }
             }
         });
     }
@@ -176,14 +206,83 @@ public class MapsActivity
         return brng;
     }
 
+
     @Override
-    public void onConnected(@Nullable Bundle bundle){
+    public void onConnected(@Nullable Bundle bundle) {
         Log.d(TAG, "onConnected - isConnected ............: " + mGoogleApiClient.isConnected());
         startLocationUpdates();
     }
 
+    protected void startLocationUpdates(){
+        if(ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+                ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED){
+            return;
+        }
+        PendingResult<Status> pendingResult
+                = LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, (com.google.android.gms.location.LocationListener) this);
+        Log.d(TAG, "Locationupdate started .............: ");
+    }
+
+    LatLng previouslatLng;
+
+
     @Override
-    protected void onStart(){
+    public void onLocationChanged(Location location) {
+        previouslatLng = new LatLng(location.getLatitude(), location.getLongitude());
+
+        double rota = 0.0;
+        double startRota = 0.0;
+
+        if(previousLocation != null){
+            rota = bearingBetweenLocations(previouslatLng, new LatLng(location.getLatitude(), location.getLongitude()));
+        }
+
+        rotateMarker(m, (float)rota, (float)startRota);
+
+        previousLocation = location;
+        Log.d(TAG, "Firing onLocationChanged....................");
+        Log.d(TAG, "lat: " + location.getLatitude() + "long: " + location.getLongitude());
+        Log.d(TAG, "bearing: " + location.getBearing());
+
+        animateMarker(new LatLng(location.getLatitude(), location.getLongitude()), false);
+    }
+
+    protected void stopLocationUpdates(){
+        LocationServices.FusedLocationApi.removeLocationUpdates(mGoogleApiClient, (com.google.android.gms.location.LocationListener) this);
+        Log.d(TAG, "Location update stoped .......................");
+    }
+
+
+
+
+
+
+    /**
+    /////////////////////////////////////////////////////////
+    //////////////////////////////////////////////////////////
+    /////////////// START STOP PAUSE RESUME //////////////////
+    ////////////////////////////////////////////////////////
+    ///////////////////////////////////////////////////////
+     */
+
+
+    @Override
+    protected void onPause(){
+        super.onPause();
+        stopLocationUpdates();
+    }
+
+    @Override
+    public void onResume(){
+        super.onResume();
+        if(mGoogleApiClient.isConnected()){
+            startLocationUpdates();
+            Log.d(TAG, "Location update resume ....................");
+        }
+    }
+
+    @Override
+    protected void onStart() {
         super.onStart();
         Log.d(TAG, "onStart fired ..........");
         mGoogleApiClient.connect();
@@ -196,63 +295,31 @@ public class MapsActivity
         Log.d(TAG, "isConnected .................: " + mGoogleApiClient.isConnected());
     }
 
-    @Override
-    public void onConnectionSuspend(int i){}
+
+
+
+
+
+
 
     @Override
-    public void onConnectionFailed(@NonNull ConnectionResult connectionResult){}
-
-    protected void startLocationUpdates(){
-        if(ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
-            ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED){
-            return;
-        }
-        PendingResult<Status> pendingResult
-            = LocationServices.FusedLocationApi.requestLocationUpdates(mGoogleApiClient, mLocationRequest, this);
-        Log.d(TAG, "Locationupdate started .............: ");
-    }
-
-    LatLng previouslatLng;
-
-    @Override
-    public void onLocationChanged(Location location){
-        previouslatLng = new LatLng(location.getLatitude(), location.getLongitude());
-
-        double rota = 0.0;
-        double startRota = 0.0;
-
-        if(previousLocation != null){
-            rota = bearingBetweenLocations(previouslatLng, newLatLng(location.getLatitude(), location.getLongitude()));
-        }
-
-        rotateMarker(m, (float)rota, (float)startRota);
-
-        previousLocation = location;
-        Log.d(TAG, "Firing onLocationChanged....................");
-        Log.d(TAG, "lat: " + location.getLatitude() + "long: " + location.getLongitude());
-        Log.d(TAG, "bearing: " + location.getBearing());
-
-        animateMarker(new LatLng(location.getLatitude(), location.getLongitude()), false);
+    public void onConnectionSuspended(int i) {
 
     }
-
     @Override
-    protected void onPause(){
-        super.onPause();
-        stopLocationUpdates();
-    }
+    public void onConnectionFailed(@NonNull ConnectionResult connectionResult) {
 
-    protected void stopLocationUpdates(){
-        LocationSeervices.FusedLocationApi.removeLocationUpdates(mGoogleApiClient, this);
-        Log.d(TAG, "Location update stoped .......................");
     }
-
     @Override
-    public void onResume(){
-        super.onResume();
-        if(mGoogleApiClient.isConnected()){
-            startLocationUpdates();
-            Log.d(TAG, "Location update resume ....................");
-        }
+    public void onStatusChanged(String provider, int status, Bundle extras) {
+
+    }
+    @Override
+    public void onProviderEnabled(String provider) {
+
+    }
+    @Override
+    public void onProviderDisabled(String provider) {
+
     }
 }
